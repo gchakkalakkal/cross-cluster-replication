@@ -105,6 +105,45 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         updateMetadata(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
     }
 
+    /**
+     * Update checkpoint metadata for the replication task (Issue #1707).
+     * This method persists the last replicated sequence numbers and timestamps to enable
+     * intelligent checkpoint recovery on replication restart.
+     *
+     * @param followerIndex The follower index name
+     * @param lastReplicatedLeaderSeqNo The last leader sequence number that was successfully replicated
+     * @param lastReplicatedFollowerCheckpoint The corresponding follower local checkpoint
+     * @param lastKnownLeaderGlobalCheckpoint The last known global checkpoint on the leader
+     */
+    suspend fun updateCheckpointMetadata(
+        followerIndex: String,
+        lastReplicatedLeaderSeqNo: Long,
+        lastReplicatedFollowerCheckpoint: Long,
+        lastKnownLeaderGlobalCheckpoint: Long
+    ) {
+        executeAndWrapExceptionIfAny({
+            val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+            val getRes = replicaionMetadataStore.getMetadata(getReq, false)
+            val metadata = getRes.replicationMetadata
+
+            // Only update if there's progress
+            if (lastReplicatedLeaderSeqNo > metadata.lastReplicatedLeaderSeqNo) {
+                metadata.lastReplicatedLeaderSeqNo = lastReplicatedLeaderSeqNo
+                metadata.lastReplicatedFollowerLocalCheckpoint = lastReplicatedFollowerCheckpoint
+                metadata.lastKnownLeaderGlobalCheckpoint = lastKnownLeaderGlobalCheckpoint
+                metadata.lastReplicationStateUpdateTime = System.currentTimeMillis()
+
+                updateMetadata(UpdateReplicationMetadataRequest(metadata, getRes.seqNo, getRes.primaryTerm))
+
+                log.debug(
+                    "Updated checkpoint metadata for $followerIndex: " +
+                    "lastReplicatedLeaderSeqNo=$lastReplicatedLeaderSeqNo, " +
+                    "lastReplicatedFollowerCheckpoint=$lastReplicatedFollowerCheckpoint"
+                )
+            }
+        }, log, "Error updating checkpoint metadata")
+    }
+
     private suspend fun updateMetadata(updateReq: UpdateReplicationMetadataRequest) {
         executeAndWrapExceptionIfAny({
             val response = replicaionMetadataStore.updateMetadata(updateReq)

@@ -89,6 +89,11 @@ class ReplicationMetadata: ToXContent {
     lateinit var settings: Settings
     var followerIndexPattern: String? = null
 
+    // Checkpoint persistence fields (Issue #1707)
+    var lastReplicatedLeaderSeqNo: Long = -1L
+    var lastReplicatedFollowerLocalCheckpoint: Long = -1L
+    var lastKnownLeaderGlobalCheckpoint: Long = -1L
+    var lastReplicationStateUpdateTime: Long = System.currentTimeMillis()
 
     constructor(connectionName: String,
                 metadataType: String,
@@ -97,7 +102,11 @@ class ReplicationMetadata: ToXContent {
                 followerContext: ReplicationContext,
                 leaderContext: ReplicationContext,
                 settings: Settings,
-                followerIndexPattern: String? = null) {
+                followerIndexPattern: String? = null,
+                lastReplicatedLeaderSeqNo: Long = -1L,
+                lastReplicatedFollowerLocalCheckpoint: Long = -1L,
+                lastKnownLeaderGlobalCheckpoint: Long = -1L,
+                lastReplicationStateUpdateTime: Long = System.currentTimeMillis()) {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState
@@ -106,6 +115,10 @@ class ReplicationMetadata: ToXContent {
         this.leaderContext = leaderContext
         this.settings = settings
         this.followerIndexPattern = followerIndexPattern
+        this.lastReplicatedLeaderSeqNo = lastReplicatedLeaderSeqNo
+        this.lastReplicatedFollowerLocalCheckpoint = lastReplicatedFollowerLocalCheckpoint
+        this.lastKnownLeaderGlobalCheckpoint = lastKnownLeaderGlobalCheckpoint
+        this.lastReplicationStateUpdateTime = lastReplicationStateUpdateTime
     }
 
     private constructor() {
@@ -127,6 +140,27 @@ class ReplicationMetadata: ToXContent {
                     ParseField(KEY_SETTINGS))
             METADATA_PARSER.declareStringOrNull({ metadata: ReplicationMetadata, value: String? -> metadata.followerIndexPattern = value },
                     ParseField(KEY_FOLLOWER_INDEX_PATTERN))
+            // Checkpoint persistence fields
+            METADATA_PARSER.declareLong(
+                ReplicationMetadata::lastReplicatedLeaderSeqNo::set,
+                ParseField("last_replicated_leader_seq_no"),
+                -1L
+            )
+            METADATA_PARSER.declareLong(
+                ReplicationMetadata::lastReplicatedFollowerLocalCheckpoint::set,
+                ParseField("last_replicated_follower_local_checkpoint"),
+                -1L
+            )
+            METADATA_PARSER.declareLong(
+                ReplicationMetadata::lastKnownLeaderGlobalCheckpoint::set,
+                ParseField("last_known_leader_global_checkpoint"),
+                -1L
+            )
+            METADATA_PARSER.declareLong(
+                ReplicationMetadata::lastReplicationStateUpdateTime::set,
+                ParseField("last_replication_state_update_time"),
+                System.currentTimeMillis()
+            )
         }
 
         @Throws(IOException::class)
@@ -164,6 +198,20 @@ class ReplicationMetadata: ToXContent {
             builder.field(KEY_FOLLOWER_INDEX_PATTERN, followerIndexPattern)
         }
 
+        // Checkpoint persistence fields
+        if (lastReplicatedLeaderSeqNo >= 0L) {
+            builder.field("last_replicated_leader_seq_no", lastReplicatedLeaderSeqNo)
+        }
+        if (lastReplicatedFollowerLocalCheckpoint >= 0L) {
+            builder.field("last_replicated_follower_local_checkpoint", lastReplicatedFollowerLocalCheckpoint)
+        }
+        if (lastKnownLeaderGlobalCheckpoint >= 0L) {
+            builder.field("last_known_leader_global_checkpoint", lastKnownLeaderGlobalCheckpoint)
+        }
+        if (lastReplicationStateUpdateTime > 0L) {
+            builder.field("last_replication_state_update_time", lastReplicationStateUpdateTime)
+        }
+
         builder.endObject()
 
         return builder
@@ -172,6 +220,8 @@ class ReplicationMetadata: ToXContent {
     override fun toString(): String {
         return "ReplicationMetadata - [connection_name: $connectionName, metadata_type: $metadataType, " +
                 "overall_state: $overallState, reason: $reason, follower_context: ${followerContext.resource}, leader_context: ${leaderContext.resource}, " +
-                " settings: ${settings}, follower_index_pattern: $followerIndexPattern ]"
+                " settings: ${settings}, follower_index_pattern: $followerIndexPattern, " +
+                "last_replicated_leader_seq_no: $lastReplicatedLeaderSeqNo, " +
+                "last_replicated_follower_local_checkpoint: $lastReplicatedFollowerLocalCheckpoint ]"
     }
 }
